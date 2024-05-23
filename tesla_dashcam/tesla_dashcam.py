@@ -37,7 +37,7 @@ _LOGGER = logging.getLogger(__name__)
 #  different ones to be created based on where it should go to (stdout,
 #  log file, ...).
 
-VERSION = {"major": 0, "minor": 1, "patch": 21, "beta": 2}
+VERSION = {"major": 0, "minor": 1, "patch": 21, "beta": 3}
 VERSION_STR = f"v{VERSION['major']}.{VERSION['minor']}.{VERSION['patch']}"
 
 if VERSION["beta"] > -1:
@@ -47,13 +47,12 @@ MONITOR_SLEEP_TIME = 5
 
 GITHUB = {
     "URL": "https://api.github.com",
-    "owner": "ehendrix23",
+    "owner": "jaredhobbs",
     "repo": "tesla_dashcam",
 }
 
 FFMPEG = {
     "darwin": "ffmpeg",
-    "win32": "ffmpeg.exe",
     "cygwin": "ffmpeg",
     "linux": "ffmpeg",
     "freebsd11": "ffmpeg",
@@ -62,7 +61,6 @@ FFMPEG = {
 # noinspection PyPep8
 MOVIE_HOMEDIR = {
     "darwin": "Movies/Tesla_Dashcam",
-    "win32": "Videos\Tesla_Dashcam",
     "cygwin": "Videos/Tesla_Dashcam",
     "linux": "Videos/Tesla_Dashcam",
     "freebsd11": "Videos/Tesla_Dashcam",
@@ -92,11 +90,11 @@ MOVIE_ENCODING = {
     "x265_mac": "hevc_videotoolbox",
     "x265_intel": "hevc_qsv",
     "x265_rpi": "h265",
+    "x265_vaapi": "hevc_vaapi",
 }
 
 DEFAULT_FONT = {
     "darwin": "/Library/Fonts/Arial Unicode.ttf",
-    "win32": "/Windows/Fonts/arial.ttf",
     "cygwin": "/cygdrive/c/Windows/Fonts/arial.ttf",
     "linux": "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
     "freebsd11": "/usr/share/local/fonts/freefont-ttf/FreeSans.ttf",
@@ -122,7 +120,6 @@ display_ts = False
 PLATFORM = sys.platform
 # Allow setting for testing.
 # PLATFORM = "darwin"
-# PLATFORM = "win32"
 # PLATFORM = "linux"
 
 PROCESSOR = platform_processor()
@@ -3065,37 +3062,6 @@ def notify_macos(title, subtitle, message):
         print(f"{get_current_timestamp()}Failed in notifification: {str(exc)}")
 
 
-def notify_windows(title, subtitle, message):
-    """Notification on Windows"""
-
-    # Section commented out, waiting to see if it really does not work on Windows 7
-    # This works only on Windows 10 9r Windows Server 2016/2019. Skipping for everything else
-    #    from platform import win32_ver
-    #    if win32_ver()[0] != 10:
-    #        return
-    global TOASTER_INSTANCE
-
-    # noinspection PyBroadException
-    try:
-        # noinspection PyUnresolvedReferences,PyPackageRequirements
-        from win10toast import ToastNotifier
-
-        if TOASTER_INSTANCE is None:
-            TOASTER_INSTANCE = ToastNotifier()
-
-        TOASTER_INSTANCE.show_toast(
-            threaded=True,
-            title=f"{title} {subtitle}",
-            msg=message,
-            duration=5,
-            icon_path=resource_path("tesla_dashcam.ico"),
-        )
-
-        run(["notify-send", f'"{title} {subtitle}"', f'"{message}"'])
-    except Exception:
-        pass
-
-
 def notify_linux(title, subtitle, message):
     """Notification on Linux"""
     try:
@@ -3108,8 +3074,6 @@ def notify(title, subtitle, message):
     """Call function to send notification based on OS"""
     if PLATFORM == "darwin":
         notify_macos(title, subtitle, message)
-    elif PLATFORM == "win32":
-        notify_windows(title, subtitle, message)
     elif PLATFORM == "linux":
         notify_linux(title, subtitle, message)
 
@@ -4096,9 +4060,7 @@ def main() -> int:
 
         # noinspection PyPep8
         temp_font_file = (
-            f"c:\{layout_settings.font.font}"
-            if PLATFORM == "win32"
-            else layout_settings.font.font
+            layout_settings.font.font
         )
         if not os.path.isfile(temp_font_file):
             print(
@@ -4163,7 +4125,7 @@ def main() -> int:
     ffmpeg_hwdev = []
     ffmpeg_hwout = []
     ffmpeg_hwupload = ""
-    if not "enc" in args:
+    if "enc" not in args:
         encoding = args.encoding if "encoding" in args else "x264"
 
         # For x265 add QuickTime compatibility
@@ -4193,6 +4155,7 @@ def main() -> int:
                     )
                 else:
                     print(f"{get_current_timestamp()}GPU acceleration is enabled.")
+                    vaapi_format = 'nv12' if encoding == 'x264' else 'p010'
                     encoding = encoding + "_" + args.gpu_type
 
                     # If using vaapi hw acceleration this takes the decoding and filter processing done in software
@@ -4200,7 +4163,7 @@ def main() -> int:
                     if args.gpu_type == "vaapi":
                         ffmpeg_hwupload = filter_string.format(
                             input_clip=input_clip,
-                            filter=f"format=nv12,hwupload",
+                            filter=f"format={vaapi_format},hwupload",
                             filter_counter=filter_counter,
                         )
                         input_clip = f"tmp{filter_counter}"
@@ -4224,7 +4187,7 @@ def main() -> int:
                             ffmpeg_hwout = ffmpeg_hwout + ["-hwaccel", "qsv"]
 
             bit_rate = str(int(10000 * layout_settings.scale)) + "K"
-            video_encoding = video_encoding + ["-b:v", bit_rate]
+            video_encoding = video_encoding + (["-b:v", bit_rate] if args.gpu_type != 'vaapi' else [])
 
         video_encoding = video_encoding + ["-c:v", MOVIE_ENCODING[encoding]]
     else:

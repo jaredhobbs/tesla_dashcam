@@ -18,8 +18,10 @@ RUN apt-get update -y \
 
 ENV LIBRARY_PATH=/lib:/usr/lib
 
-COPY . /usr/src/app/tesla_dashcam
+COPY ./requirements.txt /usr/src/app/tesla_dashcam/
 RUN pip install -r requirements.txt
+
+COPY . /usr/src/app/tesla_dashcam
 
 # Enable Logs to show on run
 ENV PYTHONUNBUFFERED=true 
